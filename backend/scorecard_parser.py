@@ -12,7 +12,7 @@ from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 client = anthropic.Anthropic()
 
@@ -25,7 +25,8 @@ The scorecard format is:
 - Header rows: Hole numbers (1-18), distances (feet), par values per hole
 - Player rows: Player name followed by their score on each hole, then a final score like "+5 (62)"
 - Bottom footer: Date, time, location, temperature, wind speed/direction
-- Blue circled numbers = Aces (hole-in-one) — these are very rare and important to flag
+- Blue circled numbers = Birdies (one under par) — do NOT flag these as aces
+- An ace (hole-in-one) is any score of 1 on any hole, regardless of circle color
 - Some players may be missing scores on early holes (DNP / did not play those holes)
 
 Return ONLY valid JSON, no markdown, no explanation. Use this exact structure:
@@ -49,7 +50,7 @@ Return ONLY valid JSON, no markdown, no explanation. Use this exact structure:
       "scores": [3, 3, 5, 3, 3, 3, 4, 4, 3, 4, 3, 3, 4, 4, 3, 3, 2, 5],
       "total": 62,
       "plus_minus": 5,
-      "aces": [17],
+      "aces": [],
       "dnp_holes": []
     }
   ]
@@ -58,7 +59,7 @@ Return ONLY valid JSON, no markdown, no explanation. Use this exact structure:
 Notes:
 - "scores" array must have exactly one entry per hole (1–18 in order)
 - If a player did not play a hole, use null for that hole's score and add the hole number (1-indexed) to "dnp_holes"
-- "aces" is a list of hole numbers (1-indexed) where the player got an ace (blue circle)
+- "aces" is a list of hole numbers (1-indexed) where the player scored a 1 (hole-in-one)
 - "plus_minus" is the number shown before the parenthetical total — positive means over par
 - "total" is the raw stroke count in parentheses
 - Parse the date carefully from the footer (e.g. "Mar 15 at 10:23 AM" → use current year if year not shown)
@@ -74,14 +75,14 @@ def encode_image(image_bytes: bytes) -> str:
 def parse_scorecard(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
     """
     Send a scorecard image to Claude Vision and return structured round data.
-    
+
     Args:
         image_bytes: Raw image file bytes
         media_type: MIME type of the image (image/jpeg, image/png, etc.)
-    
+
     Returns:
         Parsed round data as a dictionary
-    
+
     Raises:
         ValueError: If Claude returns unparseable JSON
         anthropic.APIError: On API failures

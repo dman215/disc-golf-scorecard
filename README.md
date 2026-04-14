@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🥏 FUFA Disc Golf League — Scorecard App
 
 Upload a UDisc scorecard screenshot → Claude reads it → data goes into Google Sheets.
@@ -102,3 +103,6 @@ disc-golf-scorecard/
 - [ ] Ace tracking / hall of fame
 - [ ] Season standings dashboard
 - [ ] Historical round browser
+=======
+# disc-golf-scorecard
+>>>>>>> a043ae23eda832a5217e6735e8d5fd2baa484864
