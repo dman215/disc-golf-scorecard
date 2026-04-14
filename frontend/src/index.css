@@ -1,0 +1,40 @@
+:root {
+  --orange: #f4581a;
+  --orange-light: #fde8df;
+  --orange-dark: #c73e08;
+  --blue-ace: #4a90d9;
+  --green: #27ae60;
+  --dark: #1a1a1a;
+  --mid: #444;
+  --muted: #888;
+  --border: #e5e5e5;
+  --bg: #f9f7f4;
+  --surface: #ffffff;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --radius: 8px;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--dark);
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+
+input, select, textarea {
+  font-family: var(--font-body);
+}

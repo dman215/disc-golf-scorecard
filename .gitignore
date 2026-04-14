@@ -1,0 +1,28 @@
+# Google credentials — NEVER commit this
+credentials.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+.poetry/
+
+# Environment
+.env
+.env.local
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.cursor/
+.vscode/
+*.swp
