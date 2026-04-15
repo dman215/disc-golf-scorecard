@@ -5,6 +5,7 @@ Phase 2: Full scoring engine, handicaps, championship points, dashboard.
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -14,10 +15,13 @@ from pydantic import BaseModel
 from scorecard_parser import parse_scorecard, validate_round
 from sheets_client import (
     get_all_rounds,
+    get_all_game_results,
+    get_player_game_handicaps_before,
+    get_reference_handicap_history,
     get_reference_data,
     get_player_reference,
     get_season_stats,
-    update_reference_after_round,
+    replace_game_results,
     write_dashboard,
     write_game_results,
     write_round,
@@ -66,6 +70,7 @@ class WriteRequest(BaseModel):
 class PlayerInput(BaseModel):
     name: str
     mulligan_used: bool = False
+    mulligan_type: str = "no"
     metal_hits: int = 0
     arrival_order: int = 0
     new_players_brought: int = 0
@@ -75,6 +80,10 @@ class ProcessRoundRequest(BaseModel):
     parsed_data: dict           # from /parse-scorecard
     multiplier: float = 1.0    # championship point multiplier
     players: list[PlayerInput]  # tiebreaker + bonus inputs per player
+
+
+class RebuildRequest(BaseModel):
+    dry_run: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +161,7 @@ async def process_round_endpoint(request: ProcessRoundRequest):
     - Resolves tiebreakers
     - Awards championship points
     - Writes to GameResults tab
-    - Updates Reference tab with new last-5 history
+    - Keeps Reference tab unchanged (seed-only)
     - Rewrites Dashboard tab
     """
     parsed = request.parsed_data
@@ -192,23 +201,32 @@ async def process_round_endpoint(request: ProcessRoundRequest):
         ]
 
         player_stats = season_stats.get(name, {})
-        games_played = player_stats.get("games_played", 0)
         last_placement = player_stats.get("last_placement", 0)
+        round_date = parsed.get("date", "")
+
+        # Build handicap history by round date:
+        # prior processed rounds (strictly before this date) plus Reference fallback.
+        prior_game_hc = get_player_game_handicaps_before(name, round_date)
+        ref_seed_hc = get_reference_handicap_history(name)
+        combined_history = (ref_seed_hc + prior_game_hc)[-5:]
+        games_played = len(ref_seed_hc) + len(prior_game_hc)
 
         inp = player_input_map.get(name, PlayerInput(name=name))
 
-        game_inputs.append(PlayerGameInput(
+        game_input = PlayerGameInput(
             name=name,
             raw_score=raw_score,
             games_played=games_played,
-            last_5_handicaps=last_5,
+            last_5_handicaps=combined_history or last_5,
             strokes_of_honor=int(ref.get("Strokes_of_Honor") or 0),
             prev_placement=last_placement,
             new_players_brought=inp.new_players_brought,
             mulligan_used=inp.mulligan_used,
             metal_hits=inp.metal_hits,
             arrival_order=inp.arrival_order,
-        ))
+        )
+        setattr(game_input, "mulligan_type", inp.mulligan_type)
+        game_inputs.append(game_input)
 
     # Run scoring engine
     try:
@@ -234,13 +252,7 @@ async def process_round_endpoint(request: ProcessRoundRequest):
     except Exception as e:
         raise HTTPException(500, f"Failed writing game results: {e}")
 
-    # Update Reference tab with new last-5 for each player
     ref_errors = []
-    for result in summary.players:
-        try:
-            update_reference_after_round(result.name, result.updated_last_5)
-        except Exception as e:
-            ref_errors.append(f"{result.name}: {e}")
 
     # Refresh season stats and write Dashboard
     try:
@@ -276,6 +288,173 @@ async def process_round_endpoint(request: ProcessRoundRequest):
             }
             for p in summary.players
         ],
+    }
+
+
+@app.post("/rebuild-season")
+async def rebuild_season_endpoint(request: RebuildRequest):
+    """
+    Rebuild GameResults and Dashboard from existing GameResults source rows, ordered by date.
+    Reference tab is treated as immutable seed data.
+    """
+    source_rows = get_all_game_results()
+    if not source_rows:
+        return {"success": True, "rounds_rebuilt": 0, "rows_written": 0, "message": "No GameResults rows found"}
+
+    grouped: dict[tuple[str, str, float], list[dict]] = {}
+    for idx, row in enumerate(source_rows):
+        date = str(row.get("Date", "")).strip()
+        course = str(row.get("Course", "")).strip()
+        try:
+            multiplier = float(row.get("Multiplier", 1) or 1)
+        except (TypeError, ValueError):
+            multiplier = 1.0
+        key = (date, course, multiplier)
+        row["_source_idx"] = idx
+        grouped.setdefault(key, []).append(row)
+
+    def _sort_key(item: tuple[str, str, float]):
+        date = item[0]
+        try:
+            d = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            d = datetime.max
+        return (d, item[1], item[2])
+
+    ordered_round_keys = sorted(grouped.keys(), key=_sort_key)
+
+    player_year_history: dict[tuple[str, int], list[int]] = {}
+    player_last_placement: dict[str, int] = {}
+    player_all_pts: dict[str, list[float]] = {}
+    rebuilt_rows: list[list] = []
+    last_summary = None
+
+    for date, course, multiplier in ordered_round_keys:
+        rows = grouped[(date, course, multiplier)]
+        rows.sort(key=lambda r: r.get("_source_idx", 0))
+        try:
+            round_year = datetime.strptime(date, "%Y-%m-%d").year
+        except ValueError:
+            round_year = 2026
+
+        game_inputs: list[PlayerGameInput] = []
+        for row in rows:
+            name = str(row.get("Player", "")).strip()
+            if not name:
+                continue
+
+            year_key = (name, round_year)
+            year_prior = player_year_history.get(year_key, [])
+            ref_seed = get_reference_handicap_history(name)
+            # For fewer than 5 games in current year, backfill from reference
+            # starting from most recent (H_Last, H_2nd_Last, ...).
+            needed = max(0, 5 - len(year_prior))
+            ref_backfill = ref_seed[-needed:] if needed > 0 else []
+            effective_history = (ref_backfill + year_prior)[-5:]
+
+            ref = get_player_reference(name) or {}
+            try:
+                raw_score = int(row.get("Raw_Score", 0) or 0)
+            except (TypeError, ValueError):
+                raw_score = 0
+            try:
+                new_players_brought = int(row.get("New_Player_Bonus", 0) or 0)
+            except (TypeError, ValueError):
+                new_players_brought = 0
+            try:
+                metal_hits = int(row.get("Metal_Hits", 0) or 0)
+            except (TypeError, ValueError):
+                metal_hits = 0
+            try:
+                arrival_order = int(row.get("Arrival_Order", 0) or 0)
+            except (TypeError, ValueError):
+                arrival_order = 0
+
+            mulligan_raw = str(row.get("Mulligan_Used", "0")).strip().lower()
+            mulligan_used = mulligan_raw in ("1", "true", "yes")
+            mulligan_type = str(row.get("Mulligan_Type", "no")).strip().lower() or "no"
+            if mulligan_type not in ("no", "yes", "va"):
+                mulligan_type = "yes" if mulligan_used else "no"
+
+            game_input = PlayerGameInput(
+                name=name,
+                raw_score=raw_score,
+                games_played=len(year_prior),
+                last_5_handicaps=effective_history,
+                strokes_of_honor=int(ref.get("Strokes_of_Honor") or 0),
+                prev_placement=player_last_placement.get(name, 0),
+                new_players_brought=new_players_brought,
+                mulligan_used=mulligan_used or mulligan_type == "va",
+                metal_hits=metal_hits,
+                arrival_order=arrival_order,
+            )
+            setattr(game_input, "mulligan_type", mulligan_type)
+            game_inputs.append(game_input)
+
+        if not game_inputs:
+            continue
+
+        summary = process_round(
+            players=game_inputs,
+            date=date,
+            course=course,
+            multiplier=multiplier,
+        )
+        last_summary = summary
+        input_by_name = {gi.name: gi for gi in game_inputs}
+
+        for p in summary.players:
+            gi = input_by_name[p.name]
+            yk = (p.name, round_year)
+            player_year_history.setdefault(yk, []).append(p.single_game_handicap)
+            player_last_placement[p.name] = p.placement
+            player_all_pts.setdefault(p.name, []).append(p.championship_pts_earned)
+
+            history = list(p.updated_last_5)
+            while len(history) < 5:
+                history.insert(0, "")
+
+            rebuilt_rows.append([
+                summary.date,
+                summary.course,
+                summary.multiplier,
+                p.name,
+                p.raw_score,
+                p.running_handicap,
+                p.strokes_of_honor,
+                p.prev_placement_pts,
+                p.new_player_bonus,
+                p.adjusted_score,
+                p.single_game_handicap,
+                p.placement,
+                p.championship_pts_raw,
+                p.championship_pts_earned,
+                1 if p.tiebreaker_used else 0,
+                1 if gi.mulligan_used else 0,
+                getattr(gi, "mulligan_type", "no"),
+                gi.metal_hits,
+                gi.arrival_order,
+                *history[-5:],
+            ])
+
+    if request.dry_run:
+        return {
+            "success": True,
+            "dry_run": True,
+            "rounds_rebuilt": len(ordered_round_keys),
+            "rows_to_write": len(rebuilt_rows),
+        }
+
+    replace_game_results(rebuilt_rows)
+
+    if last_summary is not None:
+        updated_stats = get_season_stats()
+        write_dashboard(last_summary, updated_stats)
+
+    return {
+        "success": True,
+        "rounds_rebuilt": len(ordered_round_keys),
+        "rows_written": len(rebuilt_rows),
     }
 
 

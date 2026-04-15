@@ -8,7 +8,9 @@ const s = {
   headerLeft: { display: 'flex', alignItems: 'center', gap: 12 },
   headerTitle: { fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--orange)', letterSpacing: '0.5px' },
   headerSub: { fontSize: 13, color: '#aaa' },
+  headerActions: { display: 'flex', gap: 8 },
   refreshBtn: { background: 'none', border: '1px solid #555', borderRadius: 6, padding: '6px 14px', color: '#aaa', fontSize: 12, cursor: 'pointer' },
+  rebuildBtn: { background: 'var(--orange)', border: '1px solid var(--orange)', borderRadius: 6, padding: '6px 14px', color: '#fff', fontSize: 12, cursor: 'pointer', fontWeight: 700 },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 14 },
   th: { padding: '10px 14px', background: '#f5f5f5', fontWeight: 600, fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', borderBottom: '2px solid var(--border)' },
   thLeft: { textAlign: 'left' },
@@ -47,6 +49,7 @@ export default function Standings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [rebuilding, setRebuilding] = useState(false)
 
   const fetch_ = async () => {
     setLoading(true); setError(null)
@@ -62,6 +65,28 @@ export default function Standings() {
 
   useEffect(() => { fetch_() }, [])
 
+  const rebuildSeason = async () => {
+    const ok = window.confirm('Rebuild season from existing GameResults rows? This rewrites GameResults and Dashboard.')
+    if (!ok) return
+
+    setRebuilding(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API}/rebuild-season`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dry_run: false }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.detail || 'Rebuild failed')
+      await fetch_()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
   return (
     <div style={s.wrap}>
       <div style={s.header}>
@@ -72,7 +97,12 @@ export default function Standings() {
             <div style={s.headerSub}>Best ½+1 results count{lastUpdated ? ` · Updated ${lastUpdated}` : ''}</div>
           </div>
         </div>
-        <button style={s.refreshBtn} onClick={fetch_}>↻ Refresh</button>
+        <div style={s.headerActions}>
+          <button style={s.refreshBtn} onClick={fetch_}>↻ Refresh</button>
+          <button style={{ ...s.rebuildBtn, opacity: rebuilding ? 0.7 : 1 }} onClick={rebuildSeason} disabled={rebuilding}>
+            {rebuilding ? 'Rebuilding…' : '♻ Rebuild From Scratch'}
+          </button>
+        </div>
       </div>
 
       {loading && <div style={s.loading}><span style={s.spinner} />Loading...</div>}

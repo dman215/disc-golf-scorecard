@@ -52,10 +52,11 @@ const st = {
     transition: 'all 0.2s',
   }),
   card: { background: 'var(--surface)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: 28, marginBottom: 24 },
-  twoCol: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start', marginBottom: 24 },
+  reviewStack: { display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 980, margin: '0 auto 24px' },
   imageCard: { background: 'var(--surface)', borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'hidden' },
   imageCardHeader: { padding: '12px 16px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600, color: 'var(--muted)' },
-  imagePreview: { width: '100%', objectFit: 'contain', maxHeight: 420, display: 'block' },
+  imagePreview: { width: '100%', objectFit: 'contain', maxHeight: 560, minHeight: 500, display: 'block', background: '#fff' },
+  parsedCard: { background: 'var(--surface)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: 20 },
   sectionTitle: { fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--dark)', letterSpacing: '0.5px', marginBottom: 0 },
   parseBtn: {
     background: 'var(--orange)', color: '#fff', border: 'none',
@@ -93,6 +94,7 @@ export default function App() {
   const [overwrite, setOverwrite] = useState(false)
   const [roundResults, setRoundResults] = useState(null)
   const [error, setError] = useState(null)
+  const [duplicateNotice, setDuplicateNotice] = useState(null)
 
   const currentStepIdx = STEP_KEYS.indexOf(step)
 
@@ -123,6 +125,7 @@ export default function App() {
 
   const handleConfirmScores = async () => {
     setError(null)
+    setDuplicateNotice(null)
     try {
       const res = await fetch(`${API}/write-to-sheet`, {
         method: 'POST',
@@ -131,6 +134,13 @@ export default function App() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.detail || 'Sheet write failed')
+      if (json.duplicate_round && !overwrite) {
+        setDuplicateNotice(
+          `This round appears to already exist (${parsedData?.date || ''} ${parsedData?.time || ''}). ` +
+          'Enable "Overwrite existing" if you want to replace it.'
+        )
+        return
+      }
     } catch (err) {
       setError(err.message)
       return
@@ -165,6 +175,7 @@ export default function App() {
     setWarnings([])
     setRoundResults(null)
     setError(null)
+    setDuplicateNotice(null)
   }
 
   const playerNames = parsedData?.players?.map(p => p.name) || []
@@ -220,10 +231,10 @@ export default function App() {
               </div>
             )}
 
-            {/* REVIEW — side by side: image | parsed table */}
+            {/* REVIEW — stacked: image above parsed table */}
             {step === STEPS.REVIEW && parsedData && (
               <>
-                <div style={st.twoCol}>
+                <div style={st.reviewStack}>
                   {/* Scorecard image */}
                   <div style={st.imageCard}>
                     <div style={st.imageCardHeader}>📸 Original Scorecard — use this to validate</div>
@@ -231,7 +242,7 @@ export default function App() {
                   </div>
 
                   {/* Parsed table */}
-                  <div>
+                  <div style={st.parsedCard}>
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                       <h2 style={st.sectionTitle}>Parsed Scores</h2>
                       {warnings.length > 0 && (
@@ -242,6 +253,19 @@ export default function App() {
                       Click any score to edit before confirming.
                     </p>
                     <ScorecardTable data={parsedData} onChange={setParsedData} />
+                    {duplicateNotice && (
+                      <div style={{ ...st.error, background: '#fff8e1', borderColor: '#ffe082', color: '#7c5a00' }}>
+                        ⚠️ {duplicateNotice}
+                        <div style={{ ...st.actions, marginTop: 12 }}>
+                          <button style={st.backBtn} onClick={() => setDuplicateNotice(null)}>
+                            ← Go Back
+                          </button>
+                          <button style={st.confirmBtn} onClick={handleReset}>
+                            + Process Another Scorecard
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div style={st.actions}>
                       <button style={st.confirmBtn} onClick={handleConfirmScores}>
                         ✓ Scores Look Good →

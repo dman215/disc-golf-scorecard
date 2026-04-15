@@ -38,6 +38,7 @@ Return ONLY valid JSON, no markdown, no explanation. Use this exact structure:
   "time": "HH:MM AM/PM",
   "location": "City, State",
   "temperature_f": 47,
+  "skies": "partly_cloudy",
   "wind_mph": 14,
   "wind_direction": "SE",
   "total_holes": 18,
@@ -64,6 +65,8 @@ Notes:
 - "total" is the raw stroke count in parentheses
 - Parse the date carefully from the footer (e.g. "Mar 15 at 10:23 AM" → use current year if year not shown)
 - If year is not in the footer, assume 2026
+- For skies, read the small weather icon immediately to the left of temperature and map it to one of:
+  "sunny", "partly_cloudy", "cloudy", "mostly_cloudy", "rain"
 """
 
 
@@ -126,7 +129,31 @@ def parse_scorecard(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
             f"Claude returned invalid JSON: {e}\n\nRaw response:\n{raw_text}"
         ) from e
 
+    parsed["skies"] = _normalize_skies(parsed.get("skies"))
     return parsed
+
+
+def _normalize_skies(skies: str | None) -> str:
+    """Map model output to stable values used in sheets/dashboard."""
+    value = (skies or "").strip().lower()
+    if not value:
+        return ""
+
+    if any(k in value for k in ("rain", "shower", "drizzle", "storm", "thunder")):
+        return "rain"
+    if any(k in value for k in ("snow", "flurry", "sleet", "blizzard")):
+        return "snow"
+    if "partly" in value and ("cloud" in value or "sun" in value):
+        return "partly_cloudy"
+    if any(k in value for k in ("mostly cloudy", "mostly cloud", "overcast", "multicloud", "multi cloud", "many clouds")):
+        return "cloudy"
+    if "cloud" in value:
+        return "cloudy"
+    if any(k in value for k in ("sun", "clear")):
+        return "sunny"
+
+    # Fallback to an underscored slug.
+    return re.sub(r"[^a-z0-9]+", "_", value).strip("_")
 
 
 def validate_round(data: dict) -> list[str]:
@@ -141,6 +168,9 @@ def validate_round(data: dict) -> list[str]:
 
     if not data.get("date"):
         warnings.append("Missing date")
+
+    if not data.get("skies"):
+        warnings.append("Missing skies/weather icon")
 
     players = data.get("players", [])
     if not players:

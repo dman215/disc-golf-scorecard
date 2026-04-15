@@ -46,7 +46,7 @@ export default function RoundResults({ results, multiplier, tiebreaker_notes, on
             Round Results
             {multiplier > 1 && <span style={s.multiplierBadge}>{multiplier}× pts</span>}
           </div>
-          <div style={s.headerSub}>Championship points awarded · Reference & Dashboard updated</div>
+          <div style={s.headerSub}>Championship points awarded · Dashboard updated (Reference remains seed-only)</div>
         </div>
       </div>
 

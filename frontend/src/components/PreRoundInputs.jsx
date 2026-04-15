@@ -26,7 +26,7 @@ const s = {
     border: active ? '2px solid var(--orange)' : '2px solid var(--border)',
     background: active ? 'var(--orange)' : '#fff',
     color: active ? '#fff' : 'var(--muted)',
-    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+    fontSize: 16, cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
   }),
   select: { border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 14, fontFamily: 'var(--font-body)', background: '#fff', cursor: 'pointer', minWidth: 80 },
@@ -34,18 +34,17 @@ const s = {
   submitBtn: { background: 'var(--orange)', color: '#fff', border: 'none', borderRadius: 8, padding: '13px 28px', fontSize: 16, fontWeight: 700, cursor: 'pointer' },
   backBtn: { background: 'none', border: '1.5px solid var(--border)', borderRadius: 8, padding: '12px 24px', fontSize: 14, color: 'var(--mid)', fontWeight: 500, cursor: 'pointer' },
   hint: { padding: '12px 24px', borderTop: '1px dashed var(--border)', fontSize: 12, color: 'var(--muted)' },
-  tbNote: { padding: '12px 24px', background: '#f0f7ff', fontSize: 12, color: '#3a7bd5' },
 }
 
 const MULTIPLIERS = [1, 1.5, 2]
 
-export default function PreRoundInputs({ players, onSubmit, onBack, loading }) {
+export default function PreRoundInputs({ players, onSubmit, onBack }) {
   const [multiplier, setMultiplier] = useState(1)
   const [playerData, setPlayerData] = useState(() =>
-    // players is an array of objects with a .name field — extract name correctly
-    players.map((p, i) => ({
-      name: p.name,
-      mulligan: 'no',        // 'no' | 'yes' | 'va'
+    players.map((name, i) => ({
+      name,
+      mulligan_type: 'yes',
+      mulligan_used: true,
       metal_hits: 0,
       arrival_order: i + 1,
       new_players_brought: 0,
@@ -57,46 +56,33 @@ export default function PreRoundInputs({ players, onSubmit, onBack, loading }) {
 
   const arrivalOptions = players.map((_, i) => i + 1)
 
-  const handleSubmit = () => {
-    const cleaned = playerData.map(p => ({
-      name: p.name,
-      mulligan_used: p.mulligan === 'yes',  // VA counts as no mulligan for tiebreaker
-      metal_hits: parseInt(p.metal_hits) || 0,
-      arrival_order: parseInt(p.arrival_order) || 1,
-      new_players_brought: parseInt(p.new_players_brought) || 0,
-    }))
-    onSubmit({ multiplier, players: cleaned })
-  }
-
   return (
     <div style={s.wrap}>
       <div style={s.header}>
         <span style={{ fontSize: 24 }}>🏆</span>
         <div>
           <div style={s.headerTitle}>Pre-Round Details</div>
-          <div style={s.headerSub}>Required for tiebreakers &amp; bonuses</div>
+          <div style={s.headerSub}>Required for tiebreakers & bonuses</div>
         </div>
       </div>
 
-      {/* Multiplier */}
       <div style={s.section}>
         <div style={s.sectionTitle}>Championship Point Multiplier</div>
         <div style={s.multiplierRow}>
           {MULTIPLIERS.map(m => (
-            <button key={m} style={s.multiplierBtn(multiplier === m)} onClick={() => setMultiplier(m)}>{m}×</button>
+            <button type="button" key={m} style={s.multiplierBtn(multiplier === m)} onClick={() => setMultiplier(m)}>{m}×</button>
           ))}
         </div>
         <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>1× regular · 1.5× special event · 2× season opener / solstice</p>
       </div>
 
-      {/* Player table */}
       <div style={s.section}>
         <div style={s.sectionTitle}>Player Details</div>
         <table style={s.table}>
           <thead>
             <tr>
               <th style={s.th}>Player</th>
-              <th style={{ ...s.th, ...s.thCenter }}>Mulligan</th>
+              <th style={{ ...s.th, ...s.thCenter }}>Mulligan Used?</th>
               <th style={{ ...s.th, ...s.thCenter }}>Metal Hits</th>
               <th style={{ ...s.th, ...s.thCenter }}>Arrival Order</th>
               <th style={{ ...s.th, ...s.thCenter }}>New Players Brought</th>
@@ -105,66 +91,61 @@ export default function PreRoundInputs({ players, onSubmit, onBack, loading }) {
           <tbody>
             {playerData.map((p, i) => (
               <tr key={p.name} style={{ background: i % 2 === 0 ? '#fafafa' : '#fff' }}>
-
-                {/* Name */}
                 <td style={{ ...s.td, fontWeight: 600 }}>{p.name}</td>
-
-                {/* Mulligan — No / Yes / VA */}
                 <td style={{ ...s.td, ...s.tdCenter }}>
-                  <div style={s.toggle}>
-                    <button style={s.toggleBtn(p.mulligan === 'no')}  onClick={() => update(i, 'mulligan', 'no')}>No</button>
-                    <button style={s.toggleBtn(p.mulligan === 'yes')} onClick={() => update(i, 'mulligan', 'yes')}>Yes</button>
-                    <button style={s.toggleBtn(p.mulligan === 'va')}  onClick={() => update(i, 'mulligan', 'va')}>VA</button>
-                  </div>
+                <div style={s.toggle}>
+                  <button
+                    type="button"
+                    style={s.toggleBtn(p.mulligan_type === 'no')}
+                    onClick={() => setPlayerData(prev => prev.map((row, pi) => pi === i ? { ...row, mulligan_type: 'no', mulligan_used: false } : row))}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    style={s.toggleBtn(p.mulligan_type === 'yes')}
+                    onClick={() => setPlayerData(prev => prev.map((row, pi) => pi === i ? { ...row, mulligan_type: 'yes', mulligan_used: true } : row))}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    style={s.toggleBtn(p.mulligan_type === 'va')}
+                    onClick={() => setPlayerData(prev => prev.map((row, pi) => pi === i ? { ...row, mulligan_type: 'va', mulligan_used: true } : row))}
+                  >
+                    VA
+                  </button>
+                </div>
                 </td>
-
-                {/* Metal hits — +/- counter */}
                 <td style={{ ...s.td, ...s.tdCenter }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <button style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'metal_hits', Math.max(0, p.metal_hits - 1))}>−</button>
+                    <button type="button" style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'metal_hits', Math.max(0, p.metal_hits - 1))}>−</button>
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, minWidth: 20, textAlign: 'center' }}>{p.metal_hits}</span>
-                    <button style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'metal_hits', p.metal_hits + 1)}>+</button>
+                    <button type="button" style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'metal_hits', p.metal_hits + 1)}>+</button>
                   </div>
                 </td>
-
-                {/* Arrival order */}
                 <td style={{ ...s.td, ...s.tdCenter }}>
                   <select style={s.select} value={p.arrival_order} onChange={e => update(i, 'arrival_order', parseInt(e.target.value))}>
-                    {arrivalOptions.map(n => (
-                      <option key={n} value={n}>{n}{n === 1 ? ' (first)' : n === players.length ? ' (last)' : ''}</option>
-                    ))}
+                    {arrivalOptions.map(n => <option key={n} value={n}>{n}{n === 1 ? ' (first)' : n === players.length ? ' (last)' : ''}</option>)}
                   </select>
                 </td>
-
-                {/* New players brought — +/- counter */}
                 <td style={{ ...s.td, ...s.tdCenter }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <button style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'new_players_brought', Math.max(0, p.new_players_brought - 1))}>−</button>
+                    <button type="button" style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'new_players_brought', Math.max(0, p.new_players_brought - 1))}>−</button>
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, minWidth: 20, textAlign: 'center' }}>{p.new_players_brought}</span>
-                    <button style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'new_players_brought', p.new_players_brought + 1)}>+</button>
+                    <button type="button" style={{ ...s.toggleBtn(false), width: 28, height: 28 }} onClick={() => update(i, 'new_players_brought', p.new_players_brought + 1)}>+</button>
                   </div>
                 </td>
-
               </tr>
             ))}
           </tbody>
         </table>
-        <div style={s.hint}>
-          💡 <strong>VA</strong> = mulligan used, counts as "No" for tiebreaker · <strong>New Players</strong> = first-time-ever members you invited (−1 stroke per new player this round)
-        </div>
+        <div style={s.hint}>💡 "New Players Brought" = first-time-ever league members you invited. Gives you −1 stroke per new player this round.</div>
       </div>
 
-      {/* Tiebreaker reminder */}
-      <div style={s.tbNote}>
-        <strong>Tiebreaker order:</strong> 1. No/VA mulligan beats Yes &nbsp;·&nbsp; 2. More metal hits wins &nbsp;·&nbsp; 3. Earlier arrival wins
-      </div>
-
-      {/* Actions */}
       <div style={s.actions}>
-        <button style={s.submitBtn} onClick={handleSubmit} disabled={loading}>
-          {loading ? 'Processing...' : '→ Process Round'}
-        </button>
-        <button style={s.backBtn} onClick={onBack}>← Back to Scores</button>
+        <button type="button" style={s.submitBtn} onClick={() => onSubmit({ multiplier, players: playerData })}>→ Process Round</button>
+        <button type="button" style={s.backBtn} onClick={onBack}>← Back to Scores</button>
       </div>
     </div>
   )

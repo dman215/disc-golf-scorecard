@@ -101,17 +101,18 @@ def compute_running_handicap(last_5: list[int], games_played: int) -> int:
     """
     Compute running handicap from last 5 single-game differentials.
 
-    Returns 0 if player has played fewer than MIN_GAMES_FOR_HANDICAP games.
-    avg(last_5) x 0.85, standard rounding (>=0.5 rounds up, <0.5 rounds down).
+    Uses available history up to 5 games:
+    - normally last 5
+    - last 3 or 4 when fewer than 5 exist
+    - falls back to any available history if fewer than 3 exist
+    Then computes avg(history) * 0.85 with standard rounding.
     """
-    if games_played < MIN_GAMES_FOR_HANDICAP:
-        return 0
-
     values = [h for h in last_5 if h is not None]
     if not values:
         return 0
 
-    avg = sum(values) / len(values)
+    history = values[-5:]
+    avg = sum(history) / len(history)
     adjusted = avg * HANDICAP_MULTIPLIER
     return round(adjusted)
 

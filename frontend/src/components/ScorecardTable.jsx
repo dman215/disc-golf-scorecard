@@ -26,8 +26,19 @@ const s = {
   metaLabel: { fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px' },
   metaValue: { fontSize: 15, fontWeight: 600, color: 'var(--dark)' },
   metaInput: { border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', fontSize: 14, fontWeight: 600, width: 140 },
+  metaSelect: { border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', fontSize: 14, fontWeight: 600, width: 160, background: '#fff' },
   warnings: { padding: '10px 14px', background: '#fff8e1', borderBottom: '1px solid #ffe082', fontSize: 13, color: '#7c5a00' },
 }
+
+const SKY_OPTIONS = [
+  { value: '', label: 'Unknown' },
+  { value: 'sunny', label: 'Sunny' },
+  { value: 'partly_cloudy', label: 'Partly Cloudy' },
+  { value: 'cloudy', label: 'Cloudy' },
+  { value: 'mostly_cloudy', label: 'Mostly Cloudy' },
+  { value: 'rain', label: 'Rain' },
+  { value: 'snow', label: 'Snow' },
+]
 
 function ScoreCell({ score, par, isAce }) {
   if (score === null || score === undefined || score === '') {
@@ -48,7 +59,7 @@ export default function ScorecardTable({ data, onChange }) {
 
   if (!data) return null
 
-  const { course, tees, date, location, par_total, hole_pars = [], players = [] } = data
+  const { course, tees, date, location, skies, par_total, hole_pars = [], players = [] } = data
   const holes = Array.from({ length: 18 }, (_, i) => i + 1)
 
   const handleMetaChange = (field, value) => {
@@ -89,6 +100,20 @@ export default function ScorecardTable({ data, onChange }) {
         <div style={s.metaItem}>
           <span style={s.metaLabel}>Location</span>
           <input style={{ ...s.metaInput, width: 180 }} value={location || ''} onChange={e => handleMetaChange('location', e.target.value)} />
+        </div>
+        <div style={s.metaItem}>
+          <span style={s.metaLabel}>Skies</span>
+          <select
+            style={s.metaSelect}
+            value={skies || ''}
+            onChange={e => handleMetaChange('skies', e.target.value)}
+          >
+            {SKY_OPTIONS.map(option => (
+              <option key={option.value || 'unknown'} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div style={s.metaItem}>
           <span style={s.metaLabel}>Par</span>
